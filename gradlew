@@ -66,10 +66,12 @@ die () {
 cygwin=false
 msys=false
 darwin=false
+nonposix=false
 case "$( uname )" in                #(
   CYGWIN* )         cygwin=true  ;; #(
   Darwin* )         darwin=true  ;; #(
   MSYS* | MINGW* )  msys=true    ;;
+  AIX* )            nonposix=true ;;
 esac
 
 CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
@@ -101,7 +103,7 @@ location of your Java installation."
 fi
 
 # Increase the maximum file descriptors if we can.
-if ! "$cygwin" && ! "$darwin" && [ "$MAX_FD" != "limited" ]
+if ! "$cygwin" && ! "$darwin" && ! "$nonposix" && [ "$MAX_FD" != "limited" ]
 then
     MAX_FD=$( ulimit -n )
     if [ $? -eq 0 ]

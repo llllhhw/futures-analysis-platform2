@@ -36,7 +36,9 @@ public class BacktestingEngine {
         
         if (historicalData.isEmpty()) {
             return new BacktestResult(symbol, initialCapital, 0, 0, 0, 0, 
-                                    new ArrayList<>(), new HashMap<>(), "无历史数据可回测");
+                                    new ArrayList<>(), new HashMap<>(), "无历史数据可回测",
+                                    new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), 
+                                    new ArrayList<>(), new ArrayList<>());
         }
         
         // 初始化回测参数
@@ -47,6 +49,13 @@ public class BacktestingEngine {
         
         List<Transaction> transactions = new ArrayList<>();
         List<Double> portfolioValues = new ArrayList<>();
+        List<Date> dates = new ArrayList<>();
+        List<Double> actualPrices = new ArrayList<>();
+        List<Double> predictedPrices = new ArrayList<>(); // 存储每日预测价格
+        List<Double> benchmarkReturns = new ArrayList<>(); // 基准收益（买入持有）
+        
+        double initialPrice = historicalData.get(0).getClosePrice(); // 用于基准比较
+        double benchmarkCapital = initialCapital; // 基准资本（买入持有策略）
         
         // 遍历历史数据进行回测
         for (int i = 20; i < historicalData.size(); i++) { // 从第20个数据点开始（为了有足够的历史数据计算技术指标）
@@ -59,9 +68,9 @@ public class BacktestingEngine {
             
             // 使用AI分析引擎进行分析
             Map<String, Object> technicalIndicators = calculateTechnicalIndicators(pastData);
-            var technicalAnalysis = aiEngine.performTechnicalAnalysis(symbol, pastData, technicalIndicators);
-            var fundamentalAnalysis = aiEngine.performFundamentalAnalysis(symbol, relevantNews, new HashMap<>());
-            var prediction = aiEngine.predictTrend(symbol, technicalAnalysis, fundamentalAnalysis, pastData);
+            com.futures.analysis.ai.AnalysisResult technicalAnalysis = aiEngine.performTechnicalAnalysis(symbol, pastData, technicalIndicators);
+            com.futures.analysis.ai.AnalysisResult fundamentalAnalysis = aiEngine.performFundamentalAnalysis(symbol, relevantNews, new HashMap<>());
+            TrendPredictionResult prediction = aiEngine.predictTrend(symbol, technicalAnalysis, fundamentalAnalysis, pastData);
             
             // 根据预测结果决定交易操作
             Transaction transaction = makeTradingDecision(symbol, currentData, prediction, 
@@ -94,15 +103,37 @@ public class BacktestingEngine {
                 }
             }
             portfolioValues.add(currentValue);
+            dates.add(currentDate);
+            actualPrices.add(currentData.getClosePrice());
+            
+            // 记录预测价格（使用趋势预测的目标价格）
+            predictedPrices.add(prediction.getTargetPrice());
+            
+            // 计算基准收益（买入持有策略）
+            double currentBenchmarkValue = (initialCapital / initialPrice) * currentData.getClosePrice();
+            benchmarkReturns.add(currentBenchmarkValue);
         }
         
         // 计算回测绩效指标
-        BacktestMetrics metrics = calculateMetrics(initialCapital, portfolioValues, transactions);
+        BacktestMetrics metrics = calculateMetrics(initialCapital, portfolioValues, transactions, benchmarkReturns);
         
-        return new BacktestResult(symbol, initialCapital, metrics.getTotalReturn(), 
-                                metrics.getSharpeRatio(), metrics.getMaxDrawdown(), 
-                                metrics.getWinRate(), transactions, 
-                                metrics.getAdditionalMetrics(), null);
+        // 创建包含图表数据的回测结果
+        return new BacktestResult(
+            symbol, 
+            initialCapital, 
+            metrics.getTotalReturn(), 
+            metrics.getSharpeRatio(), 
+            metrics.getMaxDrawdown(), 
+            metrics.getWinRate(), 
+            transactions, 
+            metrics.getAdditionalMetrics(), 
+            null, // errorMessage
+            dates,
+            portfolioValues,
+            actualPrices,
+            predictedPrices,
+            benchmarkReturns
+        );
     }
     
     /**
@@ -264,7 +295,7 @@ public class BacktestingEngine {
                 decision,
                 tradeAmount,
                 currentPrice,
-                new Date(),
+                currentData.getTimestamp(), // 使用数据的实际时间戳
                 capital,
                 postCapital,
                 position,
@@ -282,7 +313,7 @@ public class BacktestingEngine {
     /**
      * 计算回测绩效指标
      */
-    private BacktestMetrics calculateMetrics(double initialCapital, List<Double> portfolioValues, List<Transaction> transactions) {
+    private BacktestMetrics calculateMetrics(double initialCapital, List<Double> portfolioValues, List<Transaction> transactions, List<Double> benchmarkReturns) {
         if (portfolioValues.size() < 2) {
             return new BacktestMetrics(0, 0, 0, 0, new HashMap<>());
         }
@@ -343,6 +374,10 @@ public class BacktestingEngine {
         }
         double winRate = totalCount > 0 ? (double)winCount / totalCount : 0;
         
+        // 计算与基准策略的比较
+        double benchmarkFinalValue = benchmarkReturns.get(benchmarkReturns.size() - 1);
+        double benchmarkReturn = (benchmarkFinalValue - initialCapital) / initialCapital;
+        
         // 计算其他指标
         Map<String, Object> additionalMetrics = new HashMap<>();
         additionalMetrics.put("totalTrades", transactions.size());
@@ -350,6 +385,8 @@ public class BacktestingEngine {
         additionalMetrics.put("totalProfit", finalCapital - initialCapital);
         additionalMetrics.put("maxGain", Collections.max(portfolioValues) - initialCapital);
         additionalMetrics.put("maxLoss", Collections.min(portfolioValues) - initialCapital);
+        additionalMetrics.put("benchmarkReturn", benchmarkReturn);
+        additionalMetrics.put("alpha", totalReturn - benchmarkReturn); // 超额收益
         
         return new BacktestMetrics(totalReturn, sharpeRatio, maxDrawdown, winRate, additionalMetrics);
     }

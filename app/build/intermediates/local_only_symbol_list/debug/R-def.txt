@@ -1,0 +1,23 @@
+R_DEF: Internal format may change without notice
+local
+color colorAccent
+color colorPrimary
+color colorPrimaryDark
+drawable ic_launcher_background
+drawable ic_launcher_foreground
+id analyzeButton
+id backtestButton
+id chartContainer
+id chartWebView
+id getDataButton
+id marketDataTextView
+id resultTextView
+id selectEndDateButton
+id selectStartDateButton
+id symbolSpinner
+id titleTextView
+layout activity_main
+mipmap ic_launcher
+string app_name
+string title_activity_main
+style AppTheme

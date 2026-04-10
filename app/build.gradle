@@ -3,6 +3,7 @@ plugins {
 }
 
 android {
+    namespace 'com.futures.analysis'
     compileSdk 34
 
     defaultConfig {
@@ -19,6 +20,10 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+            jniDebuggable true
         }
     }
     compileOptions {

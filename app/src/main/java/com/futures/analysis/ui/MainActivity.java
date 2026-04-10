@@ -1,10 +1,14 @@
 package com.futures.analysis.ui;
 
+import android.app.DatePickerDialog;
 import android.os.Bundle;
 import android.view.View;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -22,9 +26,12 @@ import com.futures.analysis.data.FuturesData;
 import com.futures.analysis.data.NewsData;
 import com.futures.analysis.data.impl.MultiExchangeDataSource;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.HashMap;
 
@@ -34,14 +41,22 @@ public class MainActivity extends AppCompatActivity {
     private Button getDataButton;
     private Button analyzeButton;
     private Button backtestButton;
+    private Button selectStartDateButton;
+    private Button selectEndDateButton;
     private TextView resultTextView;
     private TextView marketDataTextView;
+    private WebView chartWebView;
+    private LinearLayout chartContainer;
     
     private MultiExchangeDataSource dataSource;
     private AIAnalysisEngine aiEngine;
     private BacktestingEngine backtestingEngine;
     private List<String> symbolsList;
     private String selectedSymbol;
+    
+    // 回测时间范围
+    private Date startDate;
+    private Date endDate;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,6 +67,9 @@ public class MainActivity extends AppCompatActivity {
         initializeEngines();
         setupEventListeners();
         loadSymbols();
+        
+        // 设置默认时间范围为最近6个月
+        setDefaultDateRange();
     }
 
     private void initializeViews() {
@@ -59,8 +77,16 @@ public class MainActivity extends AppCompatActivity {
         getDataButton = findViewById(R.id.getDataButton);
         analyzeButton = findViewById(R.id.analyzeButton);
         backtestButton = findViewById(R.id.backtestButton);
+        selectStartDateButton = findViewById(R.id.selectStartDateButton);
+        selectEndDateButton = findViewById(R.id.selectEndDateButton);
         resultTextView = findViewById(R.id.resultTextView);
         marketDataTextView = findViewById(R.id.marketDataTextView);
+        chartWebView = findViewById(R.id.chartWebView);
+        chartContainer = findViewById(R.id.chartContainer);
+        
+        // 设置WebView以显示图表
+        WebSettings webSettings = chartWebView.getSettings();
+        webSettings.setJavaScriptEnabled(true);
     }
 
     private void initializeEngines() {
@@ -85,6 +111,10 @@ public class MainActivity extends AppCompatActivity {
         getDataButton.setOnClickListener(v -> getRealTimeData());
         analyzeButton.setOnClickListener(v -> performAIAnalysis());
         backtestButton.setOnClickListener(v -> performBacktesting());
+        
+        // 添加日期选择按钮监听器
+        selectStartDateButton.setOnClickListener(v -> showDatePickerDialog(true));
+        selectEndDateButton.setOnClickListener(v -> showDatePickerDialog(false));
     }
 
     private void loadSymbols() {
@@ -98,6 +128,52 @@ public class MainActivity extends AppCompatActivity {
         if (!symbolsList.isEmpty()) {
             selectedSymbol = symbolsList.get(0);
         }
+    }
+    
+    private void setDefaultDateRange() {
+        // 设置默认时间为最近6个月
+        Calendar cal = Calendar.getInstance();
+        endDate = cal.getTime();
+        cal.add(Calendar.MONTH, -6);
+        startDate = cal.getTime();
+        
+        // 更新按钮显示
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+        selectStartDateButton.setText("开始: " + sdf.format(startDate));
+        selectEndDateButton.setText("结束: " + sdf.format(endDate));
+    }
+
+    private void showDatePickerDialog(boolean isStartDate) {
+        Calendar calendar = Calendar.getInstance();
+        if (isStartDate) {
+            calendar.setTime(startDate);
+        } else {
+            calendar.setTime(endDate);
+        }
+
+        DatePickerDialog datePickerDialog = new DatePickerDialog(
+            this,
+            (view, year, month, dayOfMonth) -> {
+                Calendar selectedCalendar = Calendar.getInstance();
+                selectedCalendar.set(year, month, dayOfMonth);
+                Date selectedDate = selectedCalendar.getTime();
+
+                if (isStartDate) {
+                    startDate = selectedDate;
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+                    selectStartDateButton.setText("开始: " + sdf.format(startDate));
+                } else {
+                    endDate = selectedDate;
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+                    selectEndDateButton.setText("结束: " + sdf.format(endDate));
+                }
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        );
+
+        datePickerDialog.show();
     }
 
     private void getRealTimeData() {
@@ -211,12 +287,17 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        if (startDate == null || endDate == null) {
+            Toast.makeText(this, "请选择回测时间范围", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (startDate.after(endDate)) {
+            Toast.makeText(this, "开始日期不能晚于结束日期", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         try {
-            // 设置回测参数
-            Date endDate = new Date();
-            java.util.Calendar cal = java.util.Calendar.getInstance();
-            cal.add(java.util.Calendar.MONTH, -6); // 回测半年数据
-            Date startDate = cal.getTime();
             double initialCapital = 100000; // 初始资金10万
             
             // 创建数据提供者
@@ -241,6 +322,9 @@ public class MainActivity extends AppCompatActivity {
             
             // 显示回测结果
             displayBacktestResult(backtestResult);
+            
+            // 显示图表
+            displayCharts(backtestResult);
             
             Toast.makeText(this, "回测分析完成", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
@@ -285,5 +369,110 @@ public class MainActivity extends AppCompatActivity {
         }
 
         resultTextView.setText(sb.toString());
+    }
+    
+    private void displayCharts(BacktestResult result) {
+        if (result.getDates() != null && result.getDates().size() > 0) {
+            // 生成图表HTML
+            String chartHtml = generateChartHtml(result);
+            chartWebView.loadDataWithBaseURL(null, chartHtml, "text/html", "UTF-8", null);
+            chartContainer.setVisibility(View.VISIBLE);
+        } else {
+            chartContainer.setVisibility(View.GONE);
+        }
+    }
+    
+    private String generateChartHtml(BacktestResult result) {
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html>")
+           .append("<html><head><meta charset='UTF-8'>")
+           .append("<title>回测结果图表</title>")
+           .append("<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>")
+           .append("</head><body>")
+           .append("<div style='width:100%; height:400px;'>")
+           .append("<canvas id='myChart'></canvas>")
+           .append("</div>")
+           .append("<script>")
+           .append("const ctx = document.getElementById('myChart').getContext('2d');")
+           .append("const chart = new Chart(ctx, {")
+           .append("  type: 'line',")
+           .append("  data: {")
+           .append("    labels: [");
+        
+        // 添加日期标签
+        if (result.getDates() != null) {
+            for (int i = 0; i < result.getDates().size(); i++) {
+                if (i > 0) html.append(",");
+                html.append("'").append(new SimpleDateFormat("MM-dd", Locale.getDefault()).format(result.getDates().get(i))).append("'");
+            }
+        }
+        
+        html.append("],")
+           .append("    datasets: [");
+        
+        // 添加组合价值曲线
+        if (result.getPortfolioValues() != null) {
+            html.append("{")
+               .append("      label: '策略收益曲线',")
+               .append("      data: [");
+            for (int i = 0; i < result.getPortfolioValues().size(); i++) {
+                if (i > 0) html.append(",");
+                html.append(String.format("%.2f", result.getPortfolioValues().get(i)));
+            }
+            html.append("],")
+               .append("      borderColor: 'rgb(75, 192, 192)',")
+               .append("      backgroundColor: 'rgba(75, 192, 192, 0.2)',")
+               .append("      tension: 0.1")
+               .append("    },");
+        }
+        
+        // 添加实际价格曲线（标准化后）
+        if (result.getActualPrices() != null && result.getActualPrices().size() > 0) {
+            // 将价格标准化到与资金类似的范围
+            double initialPrice = result.getActualPrices().get(0);
+            double initialCapital = result.getInitialCapital();
+            html.append("{")
+               .append("      label: '实际价格走势',")
+               .append("      data: [");
+            for (int i = 0; i < result.getActualPrices().size(); i++) {
+                if (i > 0) html.append(",");
+                double normalizedValue = (result.getActualPrices().get(i) / initialPrice) * initialCapital;
+                html.append(String.format("%.2f", normalizedValue));
+            }
+            html.append("],")
+               .append("      borderColor: 'rgb(255, 99, 132)',")
+               .append("      backgroundColor: 'rgba(255, 99, 132, 0.2)',")
+               .append("      tension: 0.1")
+               .append("    },");
+        }
+        
+        // 添加基准收益曲线
+        if (result.getBenchmarkReturns() != null) {
+            html.append("{")
+               .append("      label: '基准收益曲线(买入持有)',")
+               .append("      data: [");
+            for (int i = 0; i < result.getBenchmarkReturns().size(); i++) {
+                if (i > 0) html.append(",");
+                html.append(String.format("%.2f", result.getBenchmarkReturns().get(i)));
+            }
+            html.append("],")
+               .append("      borderColor: 'rgb(54, 162, 235)',")
+               .append("      backgroundColor: 'rgba(54, 162, 235, 0.2)',")
+               .append("      tension: 0.1")
+               .append("    }");
+        }
+        
+        html.append("  ],")
+           .append("  options: {")
+           .append("    responsive: true,")
+           .append("    scales: {")
+           .append("      y: { beginAtZero: false }")
+           .append("    }")
+           .append("  }")
+           .append("});")
+           .append("</script>")
+           .append("</body></html>");
+        
+        return html.toString();
     }
 }
