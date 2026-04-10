@@ -382,97 +382,102 @@ public class MainActivity extends AppCompatActivity {
         }
     }
     
-    private String generateChartHtml(BacktestResult result) {
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html>")
-           .append("<html><head><meta charset='UTF-8'>")
-           .append("<title>回测结果图表</title>")
-           .append("<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>")
-           .append("</head><body>")
-           .append("<div style='width:100%; height:400px;'>")
-           .append("<canvas id='myChart'></canvas>")
-           .append("</div>")
-           .append("<script>")
-           .append("const ctx = document.getElementById('myChart').getContext('2d');")
-           .append("const chart = new Chart(ctx, {")
-           .append("  type: 'line',")
-           .append("  data: {")
-           .append("    labels: [");
-        
-        // 添加日期标签
-        if (result.getDates() != null) {
-            for (int i = 0; i < result.getDates().size(); i++) {
-                if (i > 0) html.append(",");
-                html.append("'").append(new SimpleDateFormat("MM-dd", Locale.getDefault()).format(result.getDates().get(i))).append("'");
+    private void displayCharts(BacktestResult result) {
+        if (result.getDates() != null && result.getDates().size() > 0) {
+            // 从assets加载图表模板
+            try {
+                String htmlContent = loadChartTemplate();
+                
+                // 将回测数据注入到HTML中
+                chartWebView.loadDataWithBaseURL("file:///android_asset/", htmlContent, "text/html", "UTF-8", null);
+                
+                // 使用JavaScript将数据传递给图表
+                chartWebView.addJavascriptInterface(new ChartDataBridge(result), "ChartDataBridge");
+                
+                // 延迟执行JavaScript以确保页面加载完成
+                chartWebView.post(() -> {
+                    chartWebView.loadUrl("javascript:receiveChartData(" +
+                        formatListForJs(result.getDates()) + ", " +
+                        formatListForJs(result.getPortfolioValues()) + ", " +
+                        formatListForJs(result.getActualPrices()) + ", " +
+                        formatListForJs(result.getBenchmarkReturns()) + ", " +
+                        formatListForJs(result.getPredictedPrices()) + ")");
+                });
+                
+                chartContainer.setVisibility(View.VISIBLE);
+            } catch (Exception e) {
+                e.printStackTrace();
+                chartContainer.setVisibility(View.GONE);
+            }
+        } else {
+            chartContainer.setVisibility(View.GONE);
+        }
+    }
+    
+    private String loadChartTemplate() {
+        try {
+            java.io.InputStream inputStream = getAssets().open("chart_template.html");
+            int size = inputStream.available();
+            byte[] buffer = new byte[size];
+            inputStream.read(buffer);
+            inputStream.close();
+            return new String(buffer, "UTF-8");
+        } catch (Exception e) {
+            e.printStackTrace();
+            // 返回一个简单的备用HTML
+            return "<html><body><p>无法加载图表</p></body></html>";
+        }
+    }
+    
+    private String formatListForJs(List<?> list) {
+        if (list == null) return "[]";
+        StringBuilder sb = new StringBuilder();
+        sb.append("[");
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) sb.append(", ");
+            if (list.get(i) instanceof String) {
+                sb.append("'").append(list.get(i)).append("'");
+            } else if (list.get(i) instanceof Date) {
+                sb.append("'").append(new SimpleDateFormat("MM-dd", Locale.getDefault()).format(list.get(i))).append("'");
+            } else {
+                sb.append(list.get(i));
             }
         }
+        sb.append("]");
+        return sb.toString();
+    }
+    
+    // JavaScript接口类
+    public class ChartDataBridge {
+        private BacktestResult result;
         
-        html.append("],")
-           .append("    datasets: [");
-        
-        // 添加组合价值曲线
-        if (result.getPortfolioValues() != null) {
-            html.append("{")
-               .append("      label: '策略收益曲线',")
-               .append("      data: [");
-            for (int i = 0; i < result.getPortfolioValues().size(); i++) {
-                if (i > 0) html.append(",");
-                html.append(String.format("%.2f", result.getPortfolioValues().get(i)));
-            }
-            html.append("],")
-               .append("      borderColor: 'rgb(75, 192, 192)',")
-               .append("      backgroundColor: 'rgba(75, 192, 192, 0.2)',")
-               .append("      tension: 0.1")
-               .append("    },");
+        public ChartDataBridge(BacktestResult result) {
+            this.result = result;
         }
         
-        // 添加实际价格曲线（标准化后）
-        if (result.getActualPrices() != null && result.getActualPrices().size() > 0) {
-            // 将价格标准化到与资金类似的范围
-            double initialPrice = result.getActualPrices().get(0);
-            double initialCapital = result.getInitialCapital();
-            html.append("{")
-               .append("      label: '实际价格走势',")
-               .append("      data: [");
-            for (int i = 0; i < result.getActualPrices().size(); i++) {
-                if (i > 0) html.append(",");
-                double normalizedValue = (result.getActualPrices().get(i) / initialPrice) * initialCapital;
-                html.append(String.format("%.2f", normalizedValue));
-            }
-            html.append("],")
-               .append("      borderColor: 'rgb(255, 99, 132)',")
-               .append("      backgroundColor: 'rgba(255, 99, 132, 0.2)',")
-               .append("      tension: 0.1")
-               .append("    },");
+        @android.webkit.JavascriptInterface
+        public String getDates() {
+            return formatListForJs(result.getDates());
         }
         
-        // 添加基准收益曲线
-        if (result.getBenchmarkReturns() != null) {
-            html.append("{")
-               .append("      label: '基准收益曲线(买入持有)',")
-               .append("      data: [");
-            for (int i = 0; i < result.getBenchmarkReturns().size(); i++) {
-                if (i > 0) html.append(",");
-                html.append(String.format("%.2f", result.getBenchmarkReturns().get(i)));
-            }
-            html.append("],")
-               .append("      borderColor: 'rgb(54, 162, 235)',")
-               .append("      backgroundColor: 'rgba(54, 162, 235, 0.2)',")
-               .append("      tension: 0.1")
-               .append("    }");
+        @android.webkit.JavascriptInterface
+        public String getPortfolioValues() {
+            return formatListForJs(result.getPortfolioValues());
         }
         
-        html.append("  ],")
-           .append("  options: {")
-           .append("    responsive: true,")
-           .append("    scales: {")
-           .append("      y: { beginAtZero: false }")
-           .append("    }")
-           .append("  }")
-           .append("});")
-           .append("</script>")
-           .append("</body></html>");
+        @android.webkit.JavascriptInterface
+        public String getActualPrices() {
+            return formatListForJs(result.getActualPrices());
+        }
         
-        return html.toString();
+        @android.webkit.JavascriptInterface
+        public String getBenchmarkReturns() {
+            return formatListForJs(result.getBenchmarkReturns());
+        }
+        
+        @android.webkit.JavascriptInterface
+        public String getPredictedPrices() {
+            return formatListForJs(result.getPredictedPrices());
+        }
     }
 }

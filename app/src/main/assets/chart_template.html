@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>回测结果图表</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .chart-container {
+            position: relative;
+            height: 80vh;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h2>期货回测分析结果</h2>
+    <div class="chart-container">
+        <canvas id="backtestChart"></canvas>
+    </div>
+
+    <script>
+        // 从外部传入的数据将在下面填充
+        function renderChart(dates, portfolioValues, actualPrices, benchmarkReturns, predictedPrices) {
+            const ctx = document.getElementById('backtestChart').getContext('2d');
+            
+            // 将价格数据转换为相对于初始资金的比例，以便更好地可视化
+            const initialCapital = portfolioValues[0];
+            const initialPrice = actualPrices[0];
+            
+            // 标准化价格数据到与资金相似的范围
+            const normalizedActualPrices = actualPrices.map(price => (price / initialPrice) * initialCapital);
+            const normalizedPredictedPrices = predictedPrices.map(price => (price / initialPrice) * initialCapital);
+            
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: '策略收益曲线',
+                        data: portfolioValues,
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        tension: 0.1,
+                        yAxisID: 'y'
+                    }, {
+                        label: '实际价格走势(标准化)',
+                        data: normalizedActualPrices,
+                        borderColor: 'rgb(255, 99, 132)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        tension: 0.1,
+                        yAxisID: 'y'
+                    }, {
+                        label: '预测价格走势(标准化)',
+                        data: normalizedPredictedPrices,
+                        borderColor: 'rgb(54, 162, 235)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        tension: 0.1,
+                        borderDash: [5, 5],
+                        yAxisID: 'y'
+                    }, {
+                        label: '基准收益曲线(买入持有)',
+                        data: benchmarkReturns,
+                        borderColor: 'rgb(255, 206, 86)',
+                        backgroundColor: 'rgba(255, 206, 86, 0.2)',
+                        tension: 0.1,
+                        yAxisID: 'y'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '期货回测结果对比图'
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '日期'
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '价值'
+                            },
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // 接收外部数据的函数
+        window.receiveChartData = function(dates, portfolioValues, actualPrices, benchmarkReturns, predictedPrices) {
+            renderChart(dates, portfolioValues, actualPrices, benchmarkReturns, predictedPrices);
+        };
+    </script>
+</body>
+</html>
